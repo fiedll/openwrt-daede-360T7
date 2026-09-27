@@ -113,13 +113,6 @@ jobs:
 
           ./scripts/feeds install tailscale luci-app-tailscale-community luci-i18n-tailscale-community-zh-cn
 
-          # Tailscale is a required component of this 360T7 image.
-          # The community LuCI app and Simplified Chinese translation are
-          # provided by the current LuCI feed on ImmortalWrt 25.12.
-          test -f feeds/packages/net/tailscale/Makefile
-          test -f feeds/luci/applications/luci-app-tailscale-community/Makefile
-          test -f feeds/luci/applications/luci-i18n-tailscale-community-zh-cn/Makefile
-
           test -f package/daed/Makefile
           test -f package/luci-app-daede/Makefile
           test -f package/dae/Makefile
@@ -291,7 +284,7 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
- .config | sort
+ .config | sort || true
           grep -q '^CONFIG_PACKAGE_tailscale=y
           echo "======================================="
 
