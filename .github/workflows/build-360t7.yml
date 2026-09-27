@@ -95,7 +95,7 @@ jobs:
           fi
 
           # Set the default LAN address to avoid conflict with the ONT/router.
-          sed -i 's/192\\.168\\.1\\.1/192.168.6.1/g' package/base-files/files/bin/config_generate
+          sed -i 's/192\.168\.1\.1/192.168.6.1/g' package/base-files/files/bin/config_generate
           grep -q '192.168.6.1' package/base-files/files/bin/config_generate
 
           # ImmortalWrt 25.12 Chinese defaults can overwrite the APK mirror
@@ -241,12 +241,21 @@ jobs:
           pahole --version || true
           echo "======================================="
 
-          if ! make -j"$(nproc)"; then
-            echo "========== PARALLEL BUILD FAILED =========="
-            echo "Running serial diagnostics for Daed/package install..."
-            make -j1 V=s package/daed/compile || true
-            make -j1 V=s package/install || true
-            exit 1
+          BUILD_TIMEOUT_MIN=120
+          timeout --foreground "${BUILD_TIMEOUT_MIN}m" make -j"$(nproc)"
+          BUILD_RC=$?
+
+          if [ "$BUILD_RC" -eq 124 ]; then
+            echo "ERROR: firmware build exceeded ${BUILD_TIMEOUT_MIN} minutes."
+            ps -eo pid,ppid,etime,%cpu,%mem,stat,cmd --sort=-%cpu | head -80 || true
+            free -h || true
+            exit 124
+          fi
+
+          if [ "$BUILD_RC" -ne 0 ]; then
+            echo "ERROR: parallel firmware build failed with exit code $BUILD_RC."
+            echo "No automatic serial rebuild is started; the original failure must remain visible in the log."
+            exit "$BUILD_RC"
           fi
 
       - name: Verify 360T7 firmware output
@@ -278,7 +287,7 @@ jobs:
             \( -name '*360t7*' -o -name '*qihoo*' \) -printf '%f\n' | sort
 
       - name: Upload 360T7 firmware
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ImmortalWrt-25.12-360T7-${{ github.run_number }}
           path: openwrt/bin/targets/mediatek/filogic/
