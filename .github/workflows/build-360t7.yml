@@ -1,0 +1,267 @@
+name: Build 360T7 Firmware
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: 360t7-firmware-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMMORTALWRT_REPO: https://github.com/immortalwrt/immortalwrt.git
+  IMMORTALWRT_BRANCH: openwrt-25.12
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    name: ImmortalWrt 25.12 · Qihoo 360T7
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout build repository
+        uses: actions/checkout@v5
+
+      - name: Free disk space and setup swap
+        run: |
+          set -eux
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af || true
+          sudo swapoff -a || true
+          sudo rm -f /swapfile
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          df -h /
+          free -h
+
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y             ack antlr3 asciidoc autoconf automake autopoint             binutils bison build-essential bzip2 ccache cmake cpio curl             device-tree-compiler fastjar flex gawk gettext gcc-multilib             g++-multilib git gperf haveged help2man intltool libc6-dev-i386             libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev             libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev             libpython3-dev libreadline-dev libssl-dev libtool lrzsz             mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf             python3 python3-pyelftools python3-setuptools qemu-utils rsync             scons squashfs-tools subversion swig texinfo uglifyjs unzip             wget xmlto xxd zlib1g-dev dwarves clang llvm lld
+
+          sudo timedatectl set-timezone "$TZ"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Clone ImmortalWrt
+        run: |
+          set -eux
+          git clone --depth 1 --single-branch             --branch "$IMMORTALWRT_BRANCH"             "$IMMORTALWRT_REPO" openwrt
+          cd openwrt
+          echo "ImmortalWrt commit:"
+          git log -1 --oneline
+          echo "Expected target: mediatek/filogic/qihoo_360t7"
+
+      - name: Configure standard feeds
+        run: |
+          set -eux
+          cd openwrt
+          cp feeds.conf.default feeds.conf
+
+          # Use the normal ImmortalWrt packages feed for Tailscale.
+          # MosDNS and v2ray-geodata are installed directly from their
+          # upstream repositories below to avoid feed layout conflicts.
+          sed -i '/sbwml\\/luci-app-mosdns/d' feeds.conf
+          sed -i '/sbwml\\/v2ray-geodata/d' feeds.conf
+          sed -i '/openwrt\\/packages/d' feeds.conf
+
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Add Daed package and prepare MosDNS v5
+        run: |
+          set -eux
+          cd openwrt
+
+          # Use the Daed source/package definitions from this repository.
+          rm -rf package/daed package/luci-app-daede package/dae
+          cp -a "$GITHUB_WORKSPACE/daed" package/daed
+          cp -a "$GITHUB_WORKSPACE/luci-app-daede" package/luci-app-daede
+          cp -a "$GITHUB_WORKSPACE/dae" package/dae
+
+          # Remove conflicting native MosDNS/v2ray-geodata copies.
+          rm -rf             feeds/packages/net/mosdns             package/feeds/packages/mosdns             package/mosdns             package/luci-app-mosdns             package/geo2txt             package/v2ray-geodata             package/feeds/packages/v2ray-geodata
+
+          git clone --depth 1 --single-branch --branch v5             https://github.com/sbwml/luci-app-mosdns             /tmp/luci-app-mosdns
+
+          mkdir -p package/mosdns package/luci-app-mosdns package/geo2txt
+          cp -a /tmp/luci-app-mosdns/mosdns/. package/mosdns/
+          cp -a /tmp/luci-app-mosdns/luci-app-mosdns/. package/luci-app-mosdns/
+          if [ -d /tmp/luci-app-mosdns/geo2txt ]; then
+            cp -a /tmp/luci-app-mosdns/geo2txt/. package/geo2txt/
+          fi
+          rm -rf /tmp/luci-app-mosdns
+
+          git clone --depth 1 --single-branch             https://github.com/sbwml/v2ray-geodata             package/v2ray-geodata
+
+          ./scripts/feeds install tailscale
+
+          test -f package/daed/Makefile
+          test -f package/luci-app-daede/Makefile
+          test -f package/dae/Makefile
+          test -f package/mosdns/Makefile
+          test -f package/luci-app-mosdns/Makefile
+          test -f package/geo2txt/Makefile
+          test -f package/v2ray-geodata/v2ray-geoip/Makefile
+          test -f package/v2ray-geodata/v2ray-geosite/Makefile
+          test -f feeds/packages/net/tailscale/Makefile
+
+      - name: Create 360T7 configuration
+        run: |
+          set -eux
+          cd openwrt
+
+          cat > .config <<'EOF'
+          CONFIG_TARGET_mediatek=y
+          CONFIG_TARGET_mediatek_filogic=y
+          CONFIG_TARGET_mediatek_filogic_DEVICE_qihoo_360t7=y
+
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_luci-app-daede=y
+          CONFIG_PACKAGE_daed=y
+          CONFIG_PACKAGE_dae=y
+
+          CONFIG_PACKAGE_mosdns=y
+          CONFIG_PACKAGE_luci-app-mosdns=y
+          CONFIG_PACKAGE_geo2txt=y
+          CONFIG_PACKAGE_v2ray-geoip=y
+          CONFIG_PACKAGE_v2ray-geosite=y
+
+          CONFIG_PACKAGE_tailscale=y
+          CONFIG_PACKAGE_kmod-tun=y
+
+          CONFIG_KERNEL_BPF=y
+          CONFIG_KERNEL_BPF_EVENTS=y
+          CONFIG_KERNEL_CGROUPS=y
+          CONFIG_KERNEL_CGROUP_BPF=y
+          CONFIG_KERNEL_DEBUG_INFO=y
+          CONFIG_KERNEL_DEBUG_INFO_BTF=y
+          CONFIG_KERNEL_XDP_SOCKETS=y
+          CONFIG_PACKAGE_kmod-xdp-sockets-diag=y
+          CONFIG_DEVEL=y
+
+          # Daed must use the kernel's integrated BTF on this firmware.
+          CONFIG_PACKAGE_daed_DAED_USE_KERNEL_BTF=y
+          EOF
+
+          make defconfig
+
+          echo "========== FINAL TARGET =========="
+          grep '^CONFIG_TARGET_.*=y' .config | sort
+          echo "=================================="
+
+          grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_qihoo_360t7=y$' .config
+
+          echo "========== SELECTED PACKAGES =========="
+          grep -E '^CONFIG_PACKAGE_(daed|luci-app-daede|dae|mosdns|luci-app-mosdns|geo2txt|v2ray-geoip|v2ray-geosite|tailscale|kmod-tun)=y$' .config | sort || true
+          echo "======================================="
+
+          echo "========== BTF / eBPF =========="
+          grep -E '^(CONFIG_KERNEL_BPF|CONFIG_KERNEL_BPF_EVENTS|CONFIG_KERNEL_CGROUPS|CONFIG_KERNEL_CGROUP_BPF|CONFIG_KERNEL_DEBUG_INFO|CONFIG_KERNEL_DEBUG_INFO_BTF|CONFIG_KERNEL_XDP_SOCKETS|CONFIG_PACKAGE_kmod-xdp-sockets-diag|CONFIG_PACKAGE_daed_DAED_USE_KERNEL_BTF)=' .config | sort
+          echo "================================"
+
+      - name: Download package sources
+        run: |
+          set -eux
+          cd openwrt
+          make download -j"$(nproc)"
+          find dl -type f -size -1024c -print -delete || true
+
+      - name: Build 360T7 firmware
+        run: |
+          set -eux
+          cd openwrt
+
+          export CCACHE_DIR="$HOME/.ccache"
+          export CCACHE_MAXSIZE=2G
+
+          echo "========== BUILD ENVIRONMENT =========="
+          nproc
+          free -h
+          df -h /
+          clang --version | head -n 1
+          llvm-strip --version | head -n 1
+          pahole --version || true
+          echo "======================================="
+
+          if ! make -j"$(nproc)"; then
+            echo "========== PARALLEL BUILD FAILED =========="
+            echo "Running serial diagnostics for Daed/package install..."
+            make -j1 V=s package/daed/compile || true
+            make -j1 V=s package/install || true
+            exit 1
+          fi
+
+      - name: Verify 360T7 firmware output
+        run: |
+          set -eux
+          cd openwrt
+
+          test -d bin/targets/mediatek/filogic
+
+          echo "========== TARGET =========="
+          grep '^CONFIG_TARGET_.*=y' .config | sort
+          echo "============================"
+
+          echo "========== FIRMWARE =========="
+          ls -lah bin/targets/mediatek/filogic/
+          echo "=============================="
+
+          found=0
+          for f in bin/targets/mediatek/filogic/*360t7*sysupgrade*.itb; do
+            [ -f "$f" ] || continue
+            echo "FOUND: $f"
+            found=1
+          done
+
+          [ "$found" -eq 1 ]
+
+          # Also verify the image metadata names expected by the 360T7 target.
+          find bin/targets/mediatek/filogic -maxdepth 1 -type f \
+            \( -name '*360t7*' -o -name '*qihoo*' \) -printf '%f\n' | sort
+
+      - name: Upload 360T7 firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImmortalWrt-25.12-360T7-${{ github.run_number }}
+          path: openwrt/bin/targets/mediatek/filogic/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Generate release metadata
+        id: release
+        run: |
+          set -eux
+          TAG="360T7-$(date +'%Y.%m.%d-%H%M')"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          cat > release.txt <<EOF
+          Device: Qihoo 360T7
+          Target: mediatek/filogic/qihoo_360t7
+          Source: ImmortalWrt 25.12
+          Daed: included
+          MosDNS v5: included
+          Tailscale: included
+          Kernel BTF/eBPF: enabled
+          Build: $GITHUB_SHA
+          EOF
+
+      - name: Publish firmware release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          body_path: release.txt
+          files: openwrt/bin/targets/mediatek/filogic/*360t7*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
