@@ -1,5 +1,4 @@
 name: Build 360T7 Firmware
-# BTF runtime validation enabled
 
 on:
   workflow_dispatch:
@@ -145,8 +144,7 @@ jobs:
           CONFIG_KERNEL_CGROUPS=y
           CONFIG_KERNEL_CGROUP_BPF=y
           CONFIG_KERNEL_DEBUG_INFO=y
-          # BTF and reduced debug info are mutually exclusive.
-          # Daed CO-RE requires the integrated kernel BTF at runtime.
+          # BTF requires full debug information; reduced debug info must be disabled.
           # CONFIG_KERNEL_DEBUG_INFO_REDUCED is not set
           CONFIG_KERNEL_DEBUG_INFO_BTF=y
           CONFIG_KERNEL_DEBUG_INFO_BTF_MODULES=y
@@ -175,13 +173,7 @@ jobs:
 
           echo "========== BTF / eBPF =========="
           grep -E '^(CONFIG_BPF_TOOLCHAIN_HOST|CONFIG_KERNEL_BPF|CONFIG_KERNEL_BPF_EVENTS|CONFIG_KERNEL_CGROUPS|CONFIG_KERNEL_CGROUP_BPF|CONFIG_KERNEL_DEBUG_INFO|CONFIG_KERNEL_DEBUG_INFO_BTF|CONFIG_KERNEL_DEBUG_INFO_BTF_MODULES|CONFIG_KERNEL_DEBUG_INFO_REDUCED|CONFIG_KERNEL_KPROBES|CONFIG_KERNEL_KPROBE_EVENTS|CONFIG_KERNEL_XDP_SOCKETS|CONFIG_PACKAGE_kmod-xdp-sockets-diag|CONFIG_PACKAGE_daed_DAED_USE_KERNEL_BTF)=' .config | sort
-
-          echo "========== REQUIRED BTF ASSERTIONS =========="
-          grep -q '^CONFIG_KERNEL_DEBUG_INFO_BTF=y$' .config
-          ! grep -q '^CONFIG_KERNEL_DEBUG_INFO_REDUCED=y$' .config
-          grep -q '^CONFIG_PACKAGE_daed_DAED_USE_KERNEL_BTF=y$' .config
-          echo "OK: integrated kernel BTF is enabled and reduced debug info is disabled."
-          echo "============================================="
+          test "$(grep -c '^CONFIG_KERNEL_DEBUG_INFO_BTF=y
 
       - name: Download package sources
         run: |
@@ -279,7 +271,7 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
- .config
+ .config)" -eq 1
           ! grep -q '^CONFIG_KERNEL_DEBUG_INFO_REDUCED=y
 
       - name: Download package sources
@@ -379,7 +371,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
  .config
-          grep -q '^CONFIG_PACKAGE_daed_DAED_USE_KERNEL_BTF=y
+          test "$(grep -c '^CONFIG_PACKAGE_daed_DAED_USE_KERNEL_BTF=y
 
       - name: Download package sources
         run: |
@@ -477,9 +469,9 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
- .config
-          echo "OK: integrated kernel BTF is enabled and reduced debug info is disabled."
-          echo "============================================="
+ .config)" -eq 1
+          echo "OK: integrated kernel BTF is enabled for daed."
+          echo "================================"
 
       - name: Download package sources
         run: |
