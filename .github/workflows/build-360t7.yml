@@ -176,7 +176,11 @@ jobs:
           grep -E '^(CONFIG_BPF_TOOLCHAIN_HOST|CONFIG_KERNEL_BPF|CONFIG_KERNEL_BPF_EVENTS|CONFIG_KERNEL_CGROUPS|CONFIG_KERNEL_CGROUP_BPF|CONFIG_KERNEL_DEBUG_INFO|CONFIG_KERNEL_DEBUG_INFO_BTF|CONFIG_KERNEL_DEBUG_INFO_BTF_MODULES|CONFIG_KERNEL_DEBUG_INFO_REDUCED|CONFIG_KERNEL_KPROBES|CONFIG_KERNEL_KPROBE_EVENTS|CONFIG_KERNEL_XDP_SOCKETS|CONFIG_PACKAGE_kmod-xdp-sockets-diag|CONFIG_PACKAGE_daed_DAED_USE_KERNEL_BTF)=' .config | sort
 
           echo "========== REQUIRED BTF ASSERTIONS =========="
-          grep -q '^CONFIG_KERNEL_DEBUG_INFO_BTF=y
+          grep -q '^CONFIG_KERNEL_DEBUG_INFO_BTF=y$' .config
+          ! grep -q '^CONFIG_KERNEL_DEBUG_INFO_REDUCED=y$' .config
+          grep -q '^CONFIG_PACKAGE_daed_DAED_USE_KERNEL_BTF=y$' .config
+          echo "OK: integrated kernel BTF is enabled and reduced debug info is disabled."
+          echo "============================================="
 
       - name: Download package sources
         run: |
