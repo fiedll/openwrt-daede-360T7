@@ -125,6 +125,10 @@ jobs:
           CONFIG_TARGET_mediatek_filogic=y
           CONFIG_TARGET_mediatek_filogic_DEVICE_qihoo_360t7=y
 
+          # Always use the official ImmortalWrt package repository.
+          # Do not inherit the mirrors.vsean.net mirror selected by ImmortalWrt.
+          CONFIG_VERSION_REPO="https://downloads.immortalwrt.org/releases/25.12-SNAPSHOT"
+
           CONFIG_PACKAGE_luci=y
           CONFIG_PACKAGE_luci-app-daede=y
           CONFIG_PACKAGE_daed=y
