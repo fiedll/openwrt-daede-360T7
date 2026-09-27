@@ -181,7 +181,11 @@ jobs:
           grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_qihoo_360t7=y$' .config
 
           echo "========== SELECTED PACKAGES =========="
-          grep -E '^CONFIG_PACKAGE_(daed|luci-app-daede|dae|mosdns|luci-app-mosdns|geo2txt|v2ray-geoip|v2ray-geosite|tailscale|kmod-tun|luci-app-tailscale-community|luci-i18n-tailscale-community-zh-cn)=y
+          grep -E '^CONFIG_PACKAGE_(daed|luci-app-daede|dae|mosdns|luci-app-mosdns|geo2txt|v2ray-geoip|v2ray-geosite|tailscale|kmod-tun|luci-app-tailscale-community|luci-i18n-tailscale-community-zh-cn)=[y]' .config | sort || true
+          grep -q '^CONFIG_PACKAGE_tailscale=[y]' .config
+          grep -q '^CONFIG_PACKAGE_kmod-tun=[y]' .config
+          grep -q '^CONFIG_PACKAGE_luci-app-tailscale-community=[y]' .config
+          grep -q '^CONFIG_PACKAGE_luci-i18n-tailscale-community-zh-cn=[y]' .config
           echo "======================================="
 
           echo "========== BTF / eBPF =========="
