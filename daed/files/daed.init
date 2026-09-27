@@ -18,6 +18,7 @@ log() {
 
 start_service() {
 	log "start: begin"
+	mkdir -p /etc/daed /var/log/daed
 	config_load "$CONF"
 
 	local enabled
