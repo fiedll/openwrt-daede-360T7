@@ -67,6 +67,17 @@ jobs:
           cd openwrt
           cp feeds.conf.default feeds.conf
 
+          # The 360T7 firmware does not need the video feed. ImmortalWrt
+          # 25.12 can generate a video/packages.adb index that is truncated
+          # or incomplete; that makes apk update fail with wget error 8 /
+          # unexpected end of file. Disable it before feeds are downloaded so
+          # it is not present in the generated APK repository configuration.
+          sed -i 's/^src-git video /# disabled: src-git video /' feeds.conf
+          if grep -q '^src-git video ' feeds.conf; then
+            echo 'ERROR: video feed is still enabled.'
+            exit 1
+          fi
+
           # Use the normal ImmortalWrt packages feed for Tailscale.
           # MosDNS and v2ray-geodata are installed directly from their
           # upstream repositories below to avoid feed layout conflicts.
@@ -76,6 +87,12 @@ jobs:
 
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+
+          # Confirm the disabled video feed did not get reintroduced by feed
+          # processing. The final firmware must not reference video/packages.adb.
+          if grep -RqsE '(^|[[:space:]])video([[:space:]]|/)' feeds.conf feeds 2>/dev/null; then
+            echo 'WARNING: video feed metadata exists in the downloaded feed tree; it is not enabled in feeds.conf.'
+          fi
 
           # Set the default LAN address to avoid conflict with the ONT/router.
           sed -i 's/192\\.168\\.1\\.1/192.168.6.1/g' package/base-files/files/bin/config_generate
