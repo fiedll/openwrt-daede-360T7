@@ -144,7 +144,14 @@ jobs:
           CONFIG_KERNEL_CGROUPS=y
           CONFIG_KERNEL_CGROUP_BPF=y
           CONFIG_KERNEL_DEBUG_INFO=y
+          # BTF and reduced debug info are mutually exclusive.
+          # Daed CO-RE requires the integrated kernel BTF at runtime.
+          # CONFIG_KERNEL_DEBUG_INFO_REDUCED is not set
           CONFIG_KERNEL_DEBUG_INFO_BTF=y
+          CONFIG_KERNEL_DEBUG_INFO_BTF_MODULES=y
+          CONFIG_BPF_TOOLCHAIN_HOST=y
+          CONFIG_KERNEL_KPROBES=y
+          CONFIG_KERNEL_KPROBE_EVENTS=y
           CONFIG_KERNEL_XDP_SOCKETS=y
           CONFIG_PACKAGE_kmod-xdp-sockets-diag=y
           CONFIG_DEVEL=y
@@ -166,8 +173,308 @@ jobs:
           echo "======================================="
 
           echo "========== BTF / eBPF =========="
-          grep -E '^(CONFIG_KERNEL_BPF|CONFIG_KERNEL_BPF_EVENTS|CONFIG_KERNEL_CGROUPS|CONFIG_KERNEL_CGROUP_BPF|CONFIG_KERNEL_DEBUG_INFO|CONFIG_KERNEL_DEBUG_INFO_BTF|CONFIG_KERNEL_XDP_SOCKETS|CONFIG_PACKAGE_kmod-xdp-sockets-diag|CONFIG_PACKAGE_daed_DAED_USE_KERNEL_BTF)=' .config | sort
-          echo "================================"
+          grep -E '^(CONFIG_BPF_TOOLCHAIN_HOST|CONFIG_KERNEL_BPF|CONFIG_KERNEL_BPF_EVENTS|CONFIG_KERNEL_CGROUPS|CONFIG_KERNEL_CGROUP_BPF|CONFIG_KERNEL_DEBUG_INFO|CONFIG_KERNEL_DEBUG_INFO_BTF|CONFIG_KERNEL_DEBUG_INFO_BTF_MODULES|CONFIG_KERNEL_DEBUG_INFO_REDUCED|CONFIG_KERNEL_KPROBES|CONFIG_KERNEL_KPROBE_EVENTS|CONFIG_KERNEL_XDP_SOCKETS|CONFIG_PACKAGE_kmod-xdp-sockets-diag|CONFIG_PACKAGE_daed_DAED_USE_KERNEL_BTF)=' .config | sort
+
+          echo "========== REQUIRED BTF ASSERTIONS =========="
+          grep -q '^CONFIG_KERNEL_DEBUG_INFO_BTF=y
+
+      - name: Download package sources
+        run: |
+          set -eux
+          cd openwrt
+          make download -j"$(nproc)"
+          find dl -type f -size -1024c -print -delete || true
+
+      - name: Build 360T7 firmware
+        run: |
+          set -eux
+          cd openwrt
+
+          export CCACHE_DIR="$HOME/.ccache"
+          export CCACHE_MAXSIZE=2G
+
+          echo "========== BUILD ENVIRONMENT =========="
+          nproc
+          free -h
+          df -h /
+          clang --version | head -n 1
+          llvm-strip --version | head -n 1
+          pahole --version || true
+          echo "======================================="
+
+          if ! make -j"$(nproc)"; then
+            echo "========== PARALLEL BUILD FAILED =========="
+            echo "Running serial diagnostics for Daed/package install..."
+            make -j1 V=s package/daed/compile || true
+            make -j1 V=s package/install || true
+            exit 1
+          fi
+
+      - name: Verify 360T7 firmware output
+        run: |
+          set -eux
+          cd openwrt
+
+          test -d bin/targets/mediatek/filogic
+
+          echo "========== TARGET =========="
+          grep '^CONFIG_TARGET_.*=y' .config | sort
+          echo "============================"
+
+          echo "========== FIRMWARE =========="
+          ls -lah bin/targets/mediatek/filogic/
+          echo "=============================="
+
+          found=0
+          for f in bin/targets/mediatek/filogic/*360t7*sysupgrade*.itb; do
+            [ -f "$f" ] || continue
+            echo "FOUND: $f"
+            found=1
+          done
+
+          [ "$found" -eq 1 ]
+
+          # Also verify the image metadata names expected by the 360T7 target.
+          find bin/targets/mediatek/filogic -maxdepth 1 -type f \
+            \( -name '*360t7*' -o -name '*qihoo*' \) -printf '%f\n' | sort
+
+      - name: Upload 360T7 firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImmortalWrt-25.12-360T7-${{ github.run_number }}
+          path: openwrt/bin/targets/mediatek/filogic/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Generate release metadata
+        id: release
+        run: |
+          set -eux
+          TAG="360T7-$(date +'%Y.%m.%d-%H%M')"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          cat > release.txt <<EOF
+          Device: Qihoo 360T7
+          Target: mediatek/filogic/qihoo_360t7
+          Source: ImmortalWrt 25.12
+          Daed: included
+          MosDNS v5: included
+          Tailscale: included
+          Kernel BTF/eBPF: enabled
+          Build: $GITHUB_SHA
+          EOF
+
+      - name: Publish firmware release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          body_path: release.txt
+          files: openwrt/bin/targets/mediatek/filogic/*360t7*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+ .config
+          ! grep -q '^CONFIG_KERNEL_DEBUG_INFO_REDUCED=y
+
+      - name: Download package sources
+        run: |
+          set -eux
+          cd openwrt
+          make download -j"$(nproc)"
+          find dl -type f -size -1024c -print -delete || true
+
+      - name: Build 360T7 firmware
+        run: |
+          set -eux
+          cd openwrt
+
+          export CCACHE_DIR="$HOME/.ccache"
+          export CCACHE_MAXSIZE=2G
+
+          echo "========== BUILD ENVIRONMENT =========="
+          nproc
+          free -h
+          df -h /
+          clang --version | head -n 1
+          llvm-strip --version | head -n 1
+          pahole --version || true
+          echo "======================================="
+
+          if ! make -j"$(nproc)"; then
+            echo "========== PARALLEL BUILD FAILED =========="
+            echo "Running serial diagnostics for Daed/package install..."
+            make -j1 V=s package/daed/compile || true
+            make -j1 V=s package/install || true
+            exit 1
+          fi
+
+      - name: Verify 360T7 firmware output
+        run: |
+          set -eux
+          cd openwrt
+
+          test -d bin/targets/mediatek/filogic
+
+          echo "========== TARGET =========="
+          grep '^CONFIG_TARGET_.*=y' .config | sort
+          echo "============================"
+
+          echo "========== FIRMWARE =========="
+          ls -lah bin/targets/mediatek/filogic/
+          echo "=============================="
+
+          found=0
+          for f in bin/targets/mediatek/filogic/*360t7*sysupgrade*.itb; do
+            [ -f "$f" ] || continue
+            echo "FOUND: $f"
+            found=1
+          done
+
+          [ "$found" -eq 1 ]
+
+          # Also verify the image metadata names expected by the 360T7 target.
+          find bin/targets/mediatek/filogic -maxdepth 1 -type f \
+            \( -name '*360t7*' -o -name '*qihoo*' \) -printf '%f\n' | sort
+
+      - name: Upload 360T7 firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImmortalWrt-25.12-360T7-${{ github.run_number }}
+          path: openwrt/bin/targets/mediatek/filogic/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Generate release metadata
+        id: release
+        run: |
+          set -eux
+          TAG="360T7-$(date +'%Y.%m.%d-%H%M')"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          cat > release.txt <<EOF
+          Device: Qihoo 360T7
+          Target: mediatek/filogic/qihoo_360t7
+          Source: ImmortalWrt 25.12
+          Daed: included
+          MosDNS v5: included
+          Tailscale: included
+          Kernel BTF/eBPF: enabled
+          Build: $GITHUB_SHA
+          EOF
+
+      - name: Publish firmware release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          body_path: release.txt
+          files: openwrt/bin/targets/mediatek/filogic/*360t7*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+ .config
+          grep -q '^CONFIG_PACKAGE_daed_DAED_USE_KERNEL_BTF=y
+
+      - name: Download package sources
+        run: |
+          set -eux
+          cd openwrt
+          make download -j"$(nproc)"
+          find dl -type f -size -1024c -print -delete || true
+
+      - name: Build 360T7 firmware
+        run: |
+          set -eux
+          cd openwrt
+
+          export CCACHE_DIR="$HOME/.ccache"
+          export CCACHE_MAXSIZE=2G
+
+          echo "========== BUILD ENVIRONMENT =========="
+          nproc
+          free -h
+          df -h /
+          clang --version | head -n 1
+          llvm-strip --version | head -n 1
+          pahole --version || true
+          echo "======================================="
+
+          if ! make -j"$(nproc)"; then
+            echo "========== PARALLEL BUILD FAILED =========="
+            echo "Running serial diagnostics for Daed/package install..."
+            make -j1 V=s package/daed/compile || true
+            make -j1 V=s package/install || true
+            exit 1
+          fi
+
+      - name: Verify 360T7 firmware output
+        run: |
+          set -eux
+          cd openwrt
+
+          test -d bin/targets/mediatek/filogic
+
+          echo "========== TARGET =========="
+          grep '^CONFIG_TARGET_.*=y' .config | sort
+          echo "============================"
+
+          echo "========== FIRMWARE =========="
+          ls -lah bin/targets/mediatek/filogic/
+          echo "=============================="
+
+          found=0
+          for f in bin/targets/mediatek/filogic/*360t7*sysupgrade*.itb; do
+            [ -f "$f" ] || continue
+            echo "FOUND: $f"
+            found=1
+          done
+
+          [ "$found" -eq 1 ]
+
+          # Also verify the image metadata names expected by the 360T7 target.
+          find bin/targets/mediatek/filogic -maxdepth 1 -type f \
+            \( -name '*360t7*' -o -name '*qihoo*' \) -printf '%f\n' | sort
+
+      - name: Upload 360T7 firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImmortalWrt-25.12-360T7-${{ github.run_number }}
+          path: openwrt/bin/targets/mediatek/filogic/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Generate release metadata
+        id: release
+        run: |
+          set -eux
+          TAG="360T7-$(date +'%Y.%m.%d-%H%M')"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          cat > release.txt <<EOF
+          Device: Qihoo 360T7
+          Target: mediatek/filogic/qihoo_360t7
+          Source: ImmortalWrt 25.12
+          Daed: included
+          MosDNS v5: included
+          Tailscale: included
+          Kernel BTF/eBPF: enabled
+          Build: $GITHUB_SHA
+          EOF
+
+      - name: Publish firmware release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          body_path: release.txt
+          files: openwrt/bin/targets/mediatek/filogic/*360t7*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+ .config
+          echo "OK: integrated kernel BTF is enabled and reduced debug info is disabled."
+          echo "============================================="
 
       - name: Download package sources
         run: |
