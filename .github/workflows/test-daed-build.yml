@@ -8,7 +8,7 @@ on:
     inputs:
       packages:
         description: Packages to build
-        default: "dae daed"
+        default: "dae daed mosdns luci-app-mosdns geo2txt v2ray-geoip v2ray-geosite tailscale"
       arch:
         description: Architecture (all for release matrix)
         type: choice
@@ -66,7 +66,11 @@ jobs:
           ARCH: ${{ matrix.arch }}-openwrt-${{ matrix.sdk }}
           FEEDNAME: daede
           PACKAGES: ${{ github.event.inputs.packages }}
-          EXTRA_FEEDS: src-git|wall|https://github.com/kenzok8/wall
+          EXTRA_FEEDS: >-
+            src-git|wall|https://github.com/kenzok8/wall
+            src-git|mosdns|https://github.com/sbwml/luci-app-mosdns;v5
+            src-git|geodata|https://github.com/sbwml/v2ray-geodata
+            src-git|tailscale|https://github.com/openwrt/packages
           NO_REFRESH_CHECK: true
           IGNORE_ERRORS: false
           INDEX: 1
