@@ -77,6 +77,19 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+          # ImmortalWrt 25.12 Chinese defaults can overwrite the APK mirror
+          # with mirrors.vsean.net on first boot. Replace it in the source
+          # package so /etc/apk/repositories.d/distfeeds.list stays on the
+          # official ImmortalWrt repository after the first boot.
+          sed -i 's#https://mirrors.vsean.net/openwrt#https://downloads.immortalwrt.org#g' \
+            package/emortal/default-settings/files/99-default-settings-chinese
+          grep -q 'https://downloads.immortalwrt.org' \
+            package/emortal/default-settings/files/99-default-settings-chinese
+          if grep -q 'https://mirrors.vsean.net/openwrt' package/emortal/default-settings/files/99-default-settings-chinese; then
+            echo 'ERROR: mirrors.vsean.net remains in default settings.'
+            exit 1
+          fi
+
       - name: Add Daed package and prepare MosDNS v5
         run: |
           set -eux
