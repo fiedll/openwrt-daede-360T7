@@ -77,14 +77,6 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-          # ImmortalWrt 25.12 Chinese defaults override CONFIG_VERSION_REPO
-          # with mirrors.vsean.net on first boot. Force the firmware to use
-          # the official ImmortalWrt APK repository instead.
-          sed -i 's#https://mirrors.vsean.net/openwrt#https://downloads.immortalwrt.org#g' \\
-            package/emortal/default-settings/files/99-default-settings-chinese
-          grep -q 'https://downloads.immortalwrt.org' \\
-            package/emortal/default-settings/files/99-default-settings-chinese
-
       - name: Add Daed package and prepare MosDNS v5
         run: |
           set -eux
