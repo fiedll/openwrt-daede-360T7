@@ -66,9 +66,14 @@ jobs:
           CONTAINER: immortalwrt/sdk
           ARCH: ${{ matrix.arch }}-openwrt-${{ matrix.sdk }}
           FEEDNAME: daede
-          PACKAGES: dae daed luci-app-daede vmlinux-btf
-          # wall supplies v2ray-geoip / v2ray-geosite (subpackages of v2ray-geodata)
-          EXTRA_FEEDS: src-git|wall|https://github.com/kenzok8/wall
+          PACKAGES: dae daed luci-app-daede vmlinux-btf mosdns luci-app-mosdns geo2txt v2ray-geoip v2ray-geosite tailscale
+          # wall supplies dae dependencies; MosDNS v5 supplies mosdns/luci-app-mosdns/geo2txt;
+          # v2ray-geodata supplies v2ray-geoip/v2ray-geosite; OpenWrt packages supplies tailscale.
+          EXTRA_FEEDS: >-
+            src-git|wall|https://github.com/kenzok8/wall
+            src-git|mosdns|https://github.com/sbwml/luci-app-mosdns;v5
+            src-git|geodata|https://github.com/sbwml/v2ray-geodata
+            src-git|tailscale|https://github.com/openwrt/packages
           NO_REFRESH_CHECK: true
           IGNORE_ERRORS: true
           INDEX: 1
@@ -82,7 +87,7 @@ jobs:
         run: |
           set -euo pipefail
           output_dir="bin/packages/${{ matrix.arch }}/daede"
-          for package in dae daed luci-app-daede vmlinux-btf; do
+          for package in dae daed luci-app-daede vmlinux-btf mosdns luci-app-mosdns geo2txt v2ray-geoip v2ray-geosite tailscale; do
             found=0
             while IFS= read -r -d '' file; do
               name=${file##*/}
@@ -265,20 +270,22 @@ jobs:
 
             echo "## 📦 SDK 24.10 · 稳定版 (IPK)"
             echo ""
-            echo "| 架构 | dae | daed | luci-app-daede |"
-            echo "| :--- | :--- | :--- | :--- |"
+            echo "| 架构 | dae | daed | luci-app-daede | mosdns | luci-app-mosdns | tailscale |"
+            echo "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
             luci_fallback=$(noarch_ipk luci-app-daede)
+            mosdns_fallback=$(noarch_ipk mosdns)
+            luci_mosdns_fallback=$(noarch_ipk luci-app-mosdns)
             for arch in $ARCHS; do
-              echo "| \`${arch}\` | $(cell_ipk dae $arch —) | $(cell_ipk daed $arch —) | $(cell_ipk luci-app-daede $arch "$luci_fallback") |"
+              echo "| \`${arch}\` | $(cell_ipk dae $arch —) | $(cell_ipk daed $arch —) | $(cell_ipk luci-app-daede $arch "$luci_fallback") | $(cell_ipk mosdns $arch "$mosdns_fallback") | $(cell_ipk luci-app-mosdns $arch "$luci_mosdns_fallback") | $(cell_ipk tailscale $arch —) |"
             done
 
             echo ""
             echo "## 📦 SDK 25.12 · 稳定版 (APK)"
             echo ""
-            echo "| 架构 | dae | daed | luci-app-daede |"
-            echo "| :--- | :--- | :--- | :--- |"
+            echo "| 架构 | dae | daed | luci-app-daede | mosdns | luci-app-mosdns | tailscale |"
+            echo "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
             for arch in $ARCHS; do
-              echo "| \`${arch}\` | $(cell_apk dae $arch) | $(cell_apk daed $arch) | $(cell_apk luci-app-daede $arch) |"
+              echo "| \`${arch}\` | $(cell_apk dae $arch) | $(cell_apk daed $arch) | $(cell_apk luci-app-daede $arch) | $(cell_apk mosdns $arch) | $(cell_apk luci-app-mosdns $arch) | $(cell_apk tailscale $arch) |"
             done
           } > release_notes.md
 
@@ -371,7 +378,7 @@ jobs:
             cp -v "$dir/feed/"* "$target/" 2>/dev/null || true
 
             manifest=""
-            for pkg in dae daed luci-app-daede; do
+            for pkg in dae daed luci-app-daede mosdns luci-app-mosdns geo2txt v2ray-geoip v2ray-geosite tailscale; do
               if ls "$target"/${pkg}_*.ipk >/dev/null 2>&1; then
                 f=$(basename "$(ls "$target"/${pkg}_*.ipk | sort -V | tail -1)")
               elif ls "$target"/${pkg}-*.apk >/dev/null 2>&1; then
