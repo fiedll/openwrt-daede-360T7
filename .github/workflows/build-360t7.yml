@@ -111,8 +111,8 @@ jobs:
           test -f package/mosdns/Makefile
           test -f package/luci-app-mosdns/Makefile
           test -f package/geo2txt/Makefile
-          test -f package/v2ray-geodata/v2ray-geoip/Makefile
-          test -f package/v2ray-geodata/v2ray-geosite/Makefile
+          # v2ray-geodata currently provides both packages from one root Makefile.
+          test -f package/v2ray-geodata/Makefile
           test -f feeds/packages/net/tailscale/Makefile
 
       - name: Create 360T7 configuration
