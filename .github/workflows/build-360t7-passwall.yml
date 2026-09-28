@@ -95,7 +95,7 @@ jobs:
           sed -i 's/192\.168\.1\.1/192.168.6.1/g' package/base-files/files/bin/config_generate
           grep -q '192.168.6.1' package/base-files/files/bin/config_generate
 
-          # 替换 APK 源为官方下载地址
+          # 保证镜像源指向官方源
           DEF_SETTING="package/emortal/default-settings/files/99-default-settings-chinese"
           if [ -f "$DEF_SETTING" ]; then
             sed -i 's#https://mirrors.vsean.net/openwrt#https://downloads.immortalwrt.org#g' "$DEF_SETTING"
@@ -138,13 +138,10 @@ jobs:
           git clone --depth 1 --single-branch \
             https://github.com/sbwml/v2ray-geodata package/v2ray-geodata
 
-          # 克隆 PassWall 及其依赖（显式指定 main 分支，禁用鉴权弹窗，失败时启用镜像备选）
+          # 克隆 PassWall-2 及其依赖源码包
           rm -rf package/passwall package/passwall_packages
-          export GIT_TERMINAL_PROMPT=0
-          git clone --depth 1 -b main https://github.com/xiaorouji/openwrt-passwall.git package/passwall || \
-            git clone --depth 1 -b main https://ghproxy.net/https://github.com/xiaorouji/openwrt-passwall.git package/passwall
-          git clone --depth 1 -b main https://github.com/xiaorouji/openwrt-passwall-packages.git package/passwall_packages || \
-            git clone --depth 1 -b main https://ghproxy.net/https://github.com/xiaorouji/openwrt-passwall-packages.git package/passwall_packages
+          git clone --depth 1 --single-branch https://github.com/xiaorouji/openwrt-passwall-2.git package/passwall
+          git clone --depth 1 --single-branch https://github.com/xiaorouji/openwrt-passwall-packages.git package/passwall_packages
 
           # 安装 Tailscale 官方源插件
           ./scripts/feeds install tailscale luci-app-tailscale-community luci-i18n-tailscale-community-zh-cn
