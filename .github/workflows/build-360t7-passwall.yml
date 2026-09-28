@@ -1,0 +1,303 @@
+name: Build 360T7 Firmware (With PassWall)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: 360t7-passwall-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMMORTALWRT_REPO: https://github.com/immortalwrt/immortalwrt.git
+  IMMORTALWRT_BRANCH: openwrt-25.12
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    name: ImmortalWrt 25.12 · Qihoo 360T7 (PassWall)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout build repository
+        uses: actions/checkout@v4
+
+      - name: Free disk space and setup swap
+        run: |
+          set -eux
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af || true
+          sudo swapoff -a || true
+          sudo rm -f /swapfile
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          df -h /
+          free -h
+
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y \
+            ack antlr3 asciidoc autoconf automake autopoint \
+            binutils bison build-essential bzip2 ccache cmake cpio curl \
+            device-tree-compiler fastjar flex gawk gettext gcc-multilib \
+            g++-multilib git gperf haveged help2man intltool libc6-dev-i386 \
+            libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev \
+            libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev \
+            libpython3-dev libreadline-dev libssl-dev libtool lrzsz \
+            mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf \
+            python3 python3-pyelftools python3-setuptools qemu-utils rsync \
+            scons squashfs-tools subversion swig texinfo uglifyjs unzip \
+            wget xmlto xxd zlib1g-dev dwarves clang llvm lld
+
+          sudo timedatectl set-timezone "$TZ"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Clone ImmortalWrt
+        run: |
+          set -eux
+          git clone --depth 1 --single-branch \
+            --branch "$IMMORTALWRT_BRANCH" \
+            "$IMMORTALWRT_REPO" openwrt
+          cd openwrt
+          echo "ImmortalWrt commit:"
+          git log -1 --oneline
+          echo "Expected target: mediatek/filogic/qihoo_360t7"
+
+      - name: Configure standard feeds
+        run: |
+          set -eux
+          cd openwrt
+          cp feeds.conf.default feeds.conf
+
+          # 禁用 video 源，防止 apk update 索引不完整
+          sed -i 's/^src-git video /# disabled: src-git video /' feeds.conf
+
+          # 去除潜在冲突源
+          sed -i '#sbwml/luci-app-mosdns#d' feeds.conf || true
+          sed -i '#sbwml/v2ray-geodata#d' feeds.conf || true
+          sed -i '#openwrt/packages#d' feeds.conf || true
+
+          # 添加 PassWall 专属 feed 源
+          echo "src-git passwall_packages https://github.com/xiaorouji/openwrt-passwall-packages.git;main" >> feeds.conf
+          echo "src-git passwall https://github.com/xiaorouji/openwrt-passwall.git;main" >> feeds.conf
+
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+          # 修改默认 LAN IP 为 192.168.6.1
+          sed -i 's/192\.168\.1\.1/192.168.6.1/g' package/base-files/files/bin/config_generate
+          grep -q '192.168.6.1' package/base-files/files/bin/config_generate
+
+          # 保证镜像源指向官方源
+          DEF_SETTING="package/emortal/default-settings/files/99-default-settings-chinese"
+          if [ -f "$DEF_SETTING" ]; then
+            sed -i 's#https://mirrors.vsean.net/openwrt#https://downloads.immortalwrt.org#g' "$DEF_SETTING"
+          fi
+
+      - name: Add Packages and Dependencies
+        run: |
+          set -eux
+          cd openwrt
+
+          # 同步本地 daed / luci-app-daede / dae
+          rm -rf package/daed package/luci-app-daede package/dae
+          cp -a "$GITHUB_WORKSPACE/daed" package/daed
+          cp -a "$GITHUB_WORKSPACE/luci-app-daede" package/luci-app-daede
+          cp -a "$GITHUB_WORKSPACE/dae" package/dae
+
+          # 清理原生冲突包
+          rm -rf \
+            feeds/packages/net/mosdns \
+            package/feeds/packages/mosdns \
+            package/mosdns \
+            package/luci-app-mosdns \
+            package/geo2txt \
+            package/v2ray-geodata \
+            package/feeds/packages/v2ray-geodata
+
+          # 克隆并准备 MosDNS v5
+          git clone --depth 1 --single-branch --branch v5 \
+            https://github.com/sbwml/luci-app-mosdns /tmp/luci-app-mosdns
+
+          mkdir -p package/mosdns package/luci-app-mosdns package/geo2txt
+          cp -a /tmp/luci-app-mosdns/mosdns/. package/mosdns/
+          cp -a /tmp/luci-app-mosdns/luci-app-mosdns/. package/luci-app-mosdns/
+          if [ -d /tmp/luci-app-mosdns/geo2txt ]; then
+            cp -a /tmp/luci-app-mosdns/geo2txt/. package/geo2txt/
+          fi
+          rm -rf /tmp/luci-app-mosdns
+
+          # 克隆 v2ray-geodata
+          git clone --depth 1 --single-branch \
+            https://github.com/sbwml/v2ray-geodata package/v2ray-geodata
+
+          # 安装 Tailscale 与 PassWall 相关包
+          ./scripts/feeds install tailscale luci-app-tailscale-community luci-i18n-tailscale-community-zh-cn
+          ./scripts/feeds install -f -p passwall_packages
+          ./scripts/feeds install -f -p passwall
+          ./scripts/feeds install luci-app-passwall
+
+          # 校验依赖文件存在
+          test -f package/daed/Makefile
+          test -f package/luci-app-daede/Makefile
+          test -f package/dae/Makefile
+          test -f package/mosdns/Makefile
+          test -f package/luci-app-mosdns/Makefile
+          test -f package/geo2txt/Makefile
+          test -f package/v2ray-geodata/Makefile
+          test -f feeds/packages/net/tailscale/Makefile
+
+      - name: Create 360T7 configuration
+        run: |
+          set -eux
+          cd openwrt
+
+          cat > .config <<'EOF'
+          CONFIG_TARGET_mediatek=y
+          CONFIG_TARGET_mediatek_filogic=y
+          CONFIG_TARGET_mediatek_filogic_DEVICE_qihoo_360t7=y
+
+          CONFIG_VERSION_REPO="https://downloads.immortalwrt.org/releases/packages-25.12"
+
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_luci-app-daede=y
+          CONFIG_PACKAGE_daed=y
+          CONFIG_PACKAGE_dae=y
+
+          CONFIG_PACKAGE_mosdns=y
+          CONFIG_PACKAGE_luci-app-mosdns=y
+          CONFIG_PACKAGE_geo2txt=y
+          CONFIG_PACKAGE_v2ray-geoip=y
+          CONFIG_PACKAGE_v2ray-geosite=y
+
+          CONFIG_PACKAGE_tailscale=y
+          CONFIG_PACKAGE_kmod-tun=y
+          CONFIG_PACKAGE_luci-app-tailscale-community=y
+          CONFIG_PACKAGE_luci-i18n-tailscale-community-zh-cn=y
+
+          # PassWall 核心组件
+          CONFIG_PACKAGE_luci-app-passwall=y
+          CONFIG_PACKAGE_luci-i18n-passwall-zh-cn=y
+          CONFIG_PACKAGE_passwall_INCLUDE_Xray=y
+          CONFIG_PACKAGE_passwall_INCLUDE_SingBox=y
+          CONFIG_PACKAGE_passwall_INCLUDE_ChinaDNS_NG=y
+          CONFIG_PACKAGE_passwall_INCLUDE_Shadowsocks_Rust=y
+          CONFIG_PACKAGE_passwall_INCLUDE_Haproxy=y
+
+          # eBPF / BTF 内核依赖
+          CONFIG_KERNEL_BPF=y
+          CONFIG_KERNEL_BPF_EVENTS=y
+          CONFIG_KERNEL_CGROUPS=y
+          CONFIG_KERNEL_CGROUP_BPF=y
+          CONFIG_KERNEL_DEBUG_INFO=y
+          # CONFIG_KERNEL_DEBUG_INFO_REDUCED is not set
+          CONFIG_KERNEL_DEBUG_INFO_BTF=y
+          CONFIG_BPF_TOOLCHAIN_HOST=y
+          CONFIG_KERNEL_KPROBES=y
+          CONFIG_KERNEL_KPROBE_EVENTS=y
+          CONFIG_KERNEL_XDP_SOCKETS=y
+          CONFIG_PACKAGE_kmod-xdp-sockets-diag=y
+          CONFIG_DEVEL=y
+
+          CONFIG_PACKAGE_daed_DAED_USE_KERNEL_BTF=y
+          EOF
+
+          make defconfig
+
+          grep -q '^CONFIG_TARGET_mediatek_filogic_DEVICE_qihoo_360t7=y$' .config
+          grep -q '^CONFIG_PACKAGE_luci-app-passwall=y$' .config
+
+      - name: Download package sources
+        run: |
+          set -eux
+          cd openwrt
+          make download -j"$(nproc)"
+          find dl -type f -size -1024c -print -delete || true
+
+      - name: Build 360T7 firmware
+        run: |
+          set -eux
+          cd openwrt
+
+          export CCACHE_DIR="$HOME/.ccache"
+          export CCACHE_MAXSIZE=2G
+
+          # 因为增加了 PassWall 的 Go/Rust 编译组件，超时放宽到 180 分钟
+          BUILD_TIMEOUT_MIN=180
+          timeout --foreground "${BUILD_TIMEOUT_MIN}m" make -j"$(nproc)"
+          BUILD_RC=$?
+
+          if [ "$BUILD_RC" -eq 124 ]; then
+            echo "ERROR: firmware build exceeded ${BUILD_TIMEOUT_MIN} minutes."
+            exit 124
+          fi
+
+          if [ "$BUILD_RC" -ne 0 ]; then
+            echo "ERROR: parallel firmware build failed with exit code $BUILD_RC."
+            exit "$BUILD_RC"
+          fi
+
+      - name: Verify 360T7 firmware output
+        run: |
+          set -eux
+          cd openwrt
+
+          test -d bin/targets/mediatek/filogic
+          ls -lah bin/targets/mediatek/filogic/
+
+          found=0
+          for f in bin/targets/mediatek/filogic/*360t7*sysupgrade*.itb; do
+            [ -f "$f" ] || continue
+            echo "FOUND: $f"
+            found=1
+          done
+          [ "$found" -eq 1 ]
+
+      - name: Upload 360T7 firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImmortalWrt-25.12-360T7-PassWall-${{ github.run_number }}
+          path: openwrt/bin/targets/mediatek/filogic/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Generate release metadata
+        id: release
+        run: |
+          set -eux
+          TAG="360T7-PassWall-$(date +'%Y.%m.%d-%H%M')"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          cat > release.txt <<EOF
+          Device: Qihoo 360T7
+          Target: mediatek/filogic/qihoo_360t7
+          Source: ImmortalWrt 25.12
+          PassWall: included
+          Daed: included
+          MosDNS v5: included
+          Tailscale: included
+          Kernel BTF/eBPF: enabled
+          Build: $GITHUB_SHA
+          EOF
+
+      - name: Publish firmware release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          body_path: release.txt
+          files: openwrt/bin/targets/mediatek/filogic/*360t7*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
