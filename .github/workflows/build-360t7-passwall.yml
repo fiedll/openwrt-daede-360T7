@@ -80,7 +80,7 @@ jobs:
           cd openwrt
           cp feeds.conf.default feeds.conf
 
-          # 禁用 video 源，防止 apk 索引问题
+          # 禁用 video 源，防止 apk update 索引不完整
           sed -i 's/^src-git video /# disabled: src-git video /' feeds.conf
 
           # 去除潜在冲突源
@@ -138,10 +138,10 @@ jobs:
           git clone --depth 1 --single-branch \
             https://github.com/sbwml/v2ray-geodata package/v2ray-geodata
 
-          # 克隆 PassWall-2 及其依赖源码包
-          rm -rf package/passwall package/passwall_packages
-          git clone --depth 1 --single-branch https://github.com/xiaorouji/openwrt-passwall-2.git package/passwall
-          git clone --depth 1 --single-branch https://github.com/xiaorouji/openwrt-passwall-packages.git package/passwall_packages
+          # 使用稳定公开的 PassWall 源（helloworld 仓库内含完整 passwall 及所有依赖组件）
+          rm -rf package/passwall
+          git clone --depth 1 --single-branch --branch master \
+            https://github.com/fw876/helloworld.git package/passwall
 
           # 安装 Tailscale 官方源插件
           ./scripts/feeds install tailscale luci-app-tailscale-community luci-i18n-tailscale-community-zh-cn
@@ -154,8 +154,7 @@ jobs:
           test -f package/luci-app-mosdns/Makefile
           test -f package/geo2txt/Makefile
           test -f package/v2ray-geodata/Makefile
-          test -d package/passwall
-          test -d package/passwall_packages
+          test -f package/passwall/luci-app-passwall/Makefile
           test -f feeds/packages/net/tailscale/Makefile
 
       - name: Create 360T7 configuration
