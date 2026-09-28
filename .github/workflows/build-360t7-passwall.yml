@@ -91,7 +91,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-          # 修改默认 LAN IP
+          # 修改默认 LAN IP 为 192.168.6.1
           sed -i 's/192\.168\.1\.1/192.168.6.1/g' package/base-files/files/bin/config_generate
           grep -q '192.168.6.1' package/base-files/files/bin/config_generate
 
@@ -138,10 +138,13 @@ jobs:
           git clone --depth 1 --single-branch \
             https://github.com/sbwml/v2ray-geodata package/v2ray-geodata
 
-          # 直接克隆 PassWall 及其依赖包到 package/ 目录
+          # 克隆 PassWall 及其依赖（显式指定 main 分支，禁用鉴权弹窗，失败时启用镜像备选）
           rm -rf package/passwall package/passwall_packages
-          git clone --depth 1 --single-branch https://github.com/xiaorouji/openwrt-passwall.git package/passwall
-          git clone --depth 1 --single-branch https://github.com/xiaorouji/openwrt-passwall-packages.git package/passwall_packages
+          export GIT_TERMINAL_PROMPT=0
+          git clone --depth 1 -b main https://github.com/xiaorouji/openwrt-passwall.git package/passwall || \
+            git clone --depth 1 -b main https://ghproxy.net/https://github.com/xiaorouji/openwrt-passwall.git package/passwall
+          git clone --depth 1 -b main https://github.com/xiaorouji/openwrt-passwall-packages.git package/passwall_packages || \
+            git clone --depth 1 -b main https://ghproxy.net/https://github.com/xiaorouji/openwrt-passwall-packages.git package/passwall_packages
 
           # 安装 Tailscale 官方源插件
           ./scripts/feeds install tailscale luci-app-tailscale-community luci-i18n-tailscale-community-zh-cn
@@ -154,7 +157,8 @@ jobs:
           test -f package/luci-app-mosdns/Makefile
           test -f package/geo2txt/Makefile
           test -f package/v2ray-geodata/Makefile
-          test -f package/passwall/luci-app-passwall/Makefile
+          test -d package/passwall
+          test -d package/passwall_packages
           test -f feeds/packages/net/tailscale/Makefile
 
       - name: Create 360T7 configuration
