@@ -80,7 +80,7 @@ jobs:
           cd openwrt
           cp feeds.conf.default feeds.conf
 
-          # 禁用 video 源，防止 apk update 索引不完整
+          # 禁用 video 源，防止 apk 索引问题
           sed -i 's/^src-git video /# disabled: src-git video /' feeds.conf
 
           # 去除潜在冲突源
@@ -91,11 +91,11 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-          # 修改默认 LAN IP 为 192.168.6.1
+          # 修改默认 LAN IP
           sed -i 's/192\.168\.1\.1/192.168.6.1/g' package/base-files/files/bin/config_generate
           grep -q '192.168.6.1' package/base-files/files/bin/config_generate
 
-          # 保证镜像源指向官方源
+          # 替换 APK 源为官方下载地址
           DEF_SETTING="package/emortal/default-settings/files/99-default-settings-chinese"
           if [ -f "$DEF_SETTING" ]; then
             sed -i 's#https://mirrors.vsean.net/openwrt#https://downloads.immortalwrt.org#g' "$DEF_SETTING"
@@ -138,7 +138,7 @@ jobs:
           git clone --depth 1 --single-branch \
             https://github.com/sbwml/v2ray-geodata package/v2ray-geodata
 
-          # 直接克隆 PassWall 及其依赖源码包到 package/ 目录（避免 feeds 机制冲突）
+          # 直接克隆 PassWall 及其依赖包到 package/ 目录
           rm -rf package/passwall package/passwall_packages
           git clone --depth 1 --single-branch https://github.com/xiaorouji/openwrt-passwall.git package/passwall
           git clone --depth 1 --single-branch https://github.com/xiaorouji/openwrt-passwall-packages.git package/passwall_packages
@@ -277,17 +277,16 @@ jobs:
           TAG="360T7-PassWall-$(date +'%Y.%m.%d-%H%M')"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-          cat > release.txt <<EOF
-Device: Qihoo 360T7
-Target: mediatek/filogic/qihoo_360t7
-Source: ImmortalWrt 25.12
-PassWall: included
-Daed: included
-MosDNS v5: included
-Tailscale: included
-Kernel BTF/eBPF: enabled
-Build: $GITHUB_SHA
-EOF
+          printf '%s\n' \
+            "Device: Qihoo 360T7" \
+            "Target: mediatek/filogic/qihoo_360t7" \
+            "Source: ImmortalWrt 25.12" \
+            "PassWall: included" \
+            "Daed: included" \
+            "MosDNS v5: included" \
+            "Tailscale: included" \
+            "Kernel BTF/eBPF: enabled" \
+            "Build: $GITHUB_SHA" > release.txt
 
       - name: Publish firmware release
         uses: softprops/action-gh-release@v2
