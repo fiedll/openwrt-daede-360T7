@@ -88,10 +88,6 @@ jobs:
           sed -i '#sbwml/v2ray-geodata#d' feeds.conf || true
           sed -i '#openwrt/packages#d' feeds.conf || true
 
-          # 添加 PassWall 专属 feed 源
-          echo "src-git passwall_packages https://github.com/xiaorouji/openwrt-passwall-packages.git;main" >> feeds.conf
-          echo "src-git passwall https://github.com/xiaorouji/openwrt-passwall.git;main" >> feeds.conf
-
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
@@ -142,13 +138,15 @@ jobs:
           git clone --depth 1 --single-branch \
             https://github.com/sbwml/v2ray-geodata package/v2ray-geodata
 
-          # 安装 Tailscale 与 PassWall 相关包
-          ./scripts/feeds install tailscale luci-app-tailscale-community luci-i18n-tailscale-community-zh-cn
-          ./scripts/feeds install -f -p passwall_packages
-          ./scripts/feeds install -f -p passwall
-          ./scripts/feeds install luci-app-passwall
+          # 直接克隆 PassWall 及其依赖源码包到 package/ 目录（避免 feeds 机制冲突）
+          rm -rf package/passwall package/passwall_packages
+          git clone --depth 1 --single-branch https://github.com/xiaorouji/openwrt-passwall.git package/passwall
+          git clone --depth 1 --single-branch https://github.com/xiaorouji/openwrt-passwall-packages.git package/passwall_packages
 
-          # 校验依赖文件存在
+          # 安装 Tailscale 官方源插件
+          ./scripts/feeds install tailscale luci-app-tailscale-community luci-i18n-tailscale-community-zh-cn
+
+          # 校验核心依赖文件存在
           test -f package/daed/Makefile
           test -f package/luci-app-daede/Makefile
           test -f package/dae/Makefile
@@ -156,6 +154,7 @@ jobs:
           test -f package/luci-app-mosdns/Makefile
           test -f package/geo2txt/Makefile
           test -f package/v2ray-geodata/Makefile
+          test -f package/passwall/luci-app-passwall/Makefile
           test -f feeds/packages/net/tailscale/Makefile
 
       - name: Create 360T7 configuration
@@ -233,7 +232,6 @@ jobs:
           export CCACHE_DIR="$HOME/.ccache"
           export CCACHE_MAXSIZE=2G
 
-          # 因为增加了 PassWall 的 Go/Rust 编译组件，超时放宽到 180 分钟
           BUILD_TIMEOUT_MIN=180
           timeout --foreground "${BUILD_TIMEOUT_MIN}m" make -j"$(nproc)"
           BUILD_RC=$?
@@ -280,16 +278,16 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
           cat > release.txt <<EOF
-          Device: Qihoo 360T7
-          Target: mediatek/filogic/qihoo_360t7
-          Source: ImmortalWrt 25.12
-          PassWall: included
-          Daed: included
-          MosDNS v5: included
-          Tailscale: included
-          Kernel BTF/eBPF: enabled
-          Build: $GITHUB_SHA
-          EOF
+Device: Qihoo 360T7
+Target: mediatek/filogic/qihoo_360t7
+Source: ImmortalWrt 25.12
+PassWall: included
+Daed: included
+MosDNS v5: included
+Tailscale: included
+Kernel BTF/eBPF: enabled
+Build: $GITHUB_SHA
+EOF
 
       - name: Publish firmware release
         uses: softprops/action-gh-release@v2
