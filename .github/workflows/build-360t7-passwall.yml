@@ -138,9 +138,9 @@ jobs:
           git clone --depth 1 --single-branch \
             https://github.com/sbwml/v2ray-geodata package/v2ray-geodata
 
-          # 使用稳定公开的 PassWall 源（helloworld 仓库内含完整 passwall 及所有依赖组件）
-          rm -rf package/passwall
-          git clone --depth 1 --single-branch --branch master \
+          # 克隆公开且长期稳定的 PassWall 及其依赖仓库
+          rm -rf package/passwall package/passwall_packages
+          git clone --depth 1 --single-branch \
             https://github.com/fw876/helloworld.git package/passwall
 
           # 安装 Tailscale 官方源插件
@@ -154,7 +154,7 @@ jobs:
           test -f package/luci-app-mosdns/Makefile
           test -f package/geo2txt/Makefile
           test -f package/v2ray-geodata/Makefile
-          test -f package/passwall/luci-app-passwall/Makefile
+          test -d package/passwall
           test -f feeds/packages/net/tailscale/Makefile
 
       - name: Create 360T7 configuration
