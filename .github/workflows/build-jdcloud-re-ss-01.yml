@@ -1,0 +1,219 @@
+name: Build JDCloud RE-SS-01 Firmware
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: jdcloud-re-ss-01-firmware-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMMORTALWRT_REPO: https://github.com/immortalwrt/immortalwrt.git
+  IMMORTALWRT_BRANCH: master
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    name: ImmortalWrt master · JDCloud RE-SS-01 · Linux 6.18
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout build repository
+        uses: actions/checkout@v5
+
+      - name: Free disk space and setup swap
+        run: |
+          set -eux
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -af || true
+          sudo swapoff -a || true
+          sudo rm -f /swapfile
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          df -h /
+          free -h
+
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs unzip wget xmlto xxd zlib1g-dev dwarves clang llvm lld
+          sudo timedatectl set-timezone "$TZ"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Clone ImmortalWrt Linux 6.18 source
+        run: |
+          set -eux
+          git clone --depth 1 --single-branch --branch "$IMMORTALWRT_BRANCH" "$IMMORTALWRT_REPO" openwrt
+          cd openwrt
+          git log -1 --oneline
+          grep -q 'KERNEL_PATCHVER:=6.18' target/linux/qualcommax/Makefile
+          grep -q 'TARGET_DEVICES += jdcloud_re-ss-01' target/linux/qualcommax/image/ipq60xx.mk
+
+      - name: Configure feeds
+        run: |
+          set -eux
+          cd openwrt
+          cp feeds.conf.default feeds.conf
+          sed -i 's/^src-git video /# disabled: src-git video /' feeds.conf
+          sed -i '/sbwml\\/luci-app-mosdns/d' feeds.conf || true
+          sed -i '/sbwml\\/v2ray-geodata/d' feeds.conf || true
+          sed -i '/openwrt\\/packages/d' feeds.conf || true
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Add Daed Dae and MosDNS
+        run: |
+          set -eux
+          cd openwrt
+          rm -rf package/daed package/luci-app-daede package/dae
+          cp -a "$GITHUB_WORKSPACE/daed" package/daed
+          cp -a "$GITHUB_WORKSPACE/luci-app-daede" package/luci-app-daede
+          cp -a "$GITHUB_WORKSPACE/dae" package/dae
+
+          rm -rf feeds/packages/net/mosdns package/feeds/packages/mosdns package/mosdns package/luci-app-mosdns package/geo2txt package/v2ray-geodata package/feeds/packages/v2ray-geodata
+          git clone --depth 1 --single-branch --branch v5 https://github.com/sbwml/luci-app-mosdns /tmp/luci-app-mosdns
+          mkdir -p package/mosdns package/luci-app-mosdns package/geo2txt
+          cp -a /tmp/luci-app-mosdns/mosdns/. package/mosdns/
+          cp -a /tmp/luci-app-mosdns/luci-app-mosdns/. package/luci-app-mosdns/
+          [ ! -d /tmp/luci-app-mosdns/geo2txt ] || cp -a /tmp/luci-app-mosdns/geo2txt/. package/geo2txt/
+          rm -rf /tmp/luci-app-mosdns
+          git clone --depth 1 --single-branch https://github.com/sbwml/v2ray-geodata package/v2ray-geodata
+          ./scripts/feeds install tailscale luci-app-tailscale-community luci-i18n-tailscale-community-zh-cn
+
+      - name: Create JDCloud RE-SS-01 configuration
+        run: |
+          set -eux
+          cd openwrt
+          cat > .config <<'EOF'
+          CONFIG_TARGET_qualcommax=y
+          CONFIG_TARGET_qualcommax_ipq60xx=y
+          CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_jdcloud_re-ss-01=y
+
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_luci-app-daede=y
+          CONFIG_PACKAGE_daed=y
+          CONFIG_PACKAGE_dae=y
+
+          CONFIG_PACKAGE_mosdns=y
+          CONFIG_PACKAGE_luci-app-mosdns=y
+          CONFIG_PACKAGE_geo2txt=y
+          CONFIG_PACKAGE_v2ray-geoip=y
+          CONFIG_PACKAGE_v2ray-geosite=y
+
+          CONFIG_PACKAGE_tailscale=y
+          CONFIG_PACKAGE_kmod-tun=y
+          CONFIG_PACKAGE_luci-app-tailscale-community=y
+          CONFIG_PACKAGE_luci-i18n-tailscale-community-zh-cn=y
+
+          CONFIG_KERNEL_BPF=y
+          CONFIG_KERNEL_BPF_EVENTS=y
+          CONFIG_KERNEL_CGROUPS=y
+          CONFIG_KERNEL_CGROUP_BPF=y
+          CONFIG_KERNEL_DEBUG_INFO=y
+          # CONFIG_KERNEL_DEBUG_INFO_REDUCED is not set
+          CONFIG_KERNEL_DEBUG_INFO_BTF=y
+          CONFIG_BPF_TOOLCHAIN_HOST=y
+          CONFIG_KERNEL_KPROBES=y
+          CONFIG_KERNEL_KPROBE_EVENTS=y
+          CONFIG_KERNEL_XDP_SOCKETS=y
+          CONFIG_PACKAGE_kmod-xdp-sockets-diag=y
+          CONFIG_DEVEL=y
+          CONFIG_PACKAGE_daed_DAED_USE_KERNEL_BTF=y
+          CONFIG_PACKAGE_wpad-openssl=y
+          EOF
+
+          make defconfig
+          grep -q '^CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_jdcloud_re-ss-01=y$' .config
+          echo "Kernel:"
+          make -s kernel_version
+          echo "Target:"
+          grep '^CONFIG_TARGET_.*=y' .config | sort
+          echo "Packages:"
+          grep -E '^CONFIG_PACKAGE_(daed|luci-app-daede|dae|mosdns|luci-app-mosdns|geo2txt|v2ray-geoip|v2ray-geosite|tailscale|kmod-tun|luci-app-tailscale-community|luci-i18n-tailscale-community-zh-cn|wpad-openssl)=y$' .config | sort
+
+      - name: Keep standard network and enable Wi-Fi
+        run: |
+          set -eux
+          cd openwrt
+          sed -i 's/192\\.168\\.1\\.1/192.168.1.1/g' package/base-files/files/bin/config_generate
+
+          mkdir -p files/etc/uci-defaults
+          cat > files/etc/uci-defaults/99-jdcloud-re-ss-01-wireless <<'EOF'
+          # Do not change ath11k board/calibration data; only ensure radios are enabled.
+          for radio in $(uci show wireless 2>/dev/null | sed -n 's/^wireless\.\(@wifi-device\[[^]]*\]\)\.type=.*/\1/p'); do
+              uci -q set wireless.$radio.disabled='0'
+          done
+          uci -q commit wireless
+          exit 0
+          EOF
+          chmod +x files/etc/uci-defaults/99-jdcloud-re-ss-01-wireless
+
+          grep -q 'jdcloud,re-ss-01' target/linux/qualcommax/ipq60xx/base-files/etc/board.d/02_network
+          grep -q '192.168.1.1' package/base-files/files/bin/config_generate
+
+      - name: Download sources
+        run: |
+          set -eux
+          cd openwrt
+          make download -j"$(nproc)"
+          find dl -type f -size -1024c -print -delete || true
+
+      - name: Build JDCloud RE-SS-01
+        run: |
+          set -eux
+          cd openwrt
+          export CCACHE_DIR="$HOME/.ccache"
+          export CCACHE_MAXSIZE=2G
+          echo "CPU: $(nproc)"
+          free -h
+          df -h /
+          clang --version | head -n 1
+          pahole --version || true
+          timeout --foreground 180m make -j"$(nproc)"
+
+      - name: Verify firmware
+        run: |
+          set -eux
+          cd openwrt
+          test -d bin/targets/qualcommax/ipq60xx
+          make -s kernel_version
+          ls -lah bin/targets/qualcommax/ipq60xx/
+          ls bin/targets/qualcommax/ipq60xx/*jdcloud_re-ss-01*squashfs-sysupgrade.bin
+          ls bin/targets/qualcommax/ipq60xx/*jdcloud_re-ss-01*initramfs-uImage.itb
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v6
+        with:
+          name: ImmortalWrt-JDCloud-RE-SS-01-Linux-6.18-${{ github.run_number }}
+          path: openwrt/bin/targets/qualcommax/ipq60xx/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: JDCloud-RE-SS-01-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          body: |
+            Device: JDCloud RE-SS-01
+            Target: qualcommax/ipq60xx/jdcloud_re-ss-01
+            Source: ImmortalWrt master
+            Kernel: Linux 6.18
+            Preinstalled: dae, daed, luci-app-daede, MosDNS v5, Tailscale
+            LAN: 192.168.1.1
+            Wi-Fi: enabled
+          files: openwrt/bin/targets/qualcommax/ipq60xx/*jdcloud_re-ss-01*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
