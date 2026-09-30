@@ -136,7 +136,9 @@ jobs:
           make defconfig
           grep -q '^CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_jdcloud_re-ss-01=y$' .config
           echo "Kernel:"
-          make -s kernel_version
+          KERNEL_PATCHVER="$(sed -n 's/^KERNEL_PATCHVER:=//p' target/linux/qualcommax/Makefile | head -n1)"
+          test "$KERNEL_PATCHVER" = "6.18"
+          echo "Linux kernel: $KERNEL_PATCHVER"
           echo "Target:"
           grep '^CONFIG_TARGET_.*=y' .config | sort
           echo "Packages:"
@@ -151,7 +153,7 @@ jobs:
           mkdir -p files/etc/uci-defaults
           cat > files/etc/uci-defaults/99-jdcloud-re-ss-01-wireless <<'EOF'
           # Do not change ath11k board/calibration data; only ensure radios are enabled.
-          for radio in $(uci show wireless 2>/dev/null | sed -n 's/^wireless\.\(@wifi-device\[[^]]*\]\)\.type=.*/\1/p'); do
+          for radio in $(uci show wireless 2>/dev/null | sed -n "s/^wireless\.\(radio[0-9]*\)\.type=.*/\1/p"); do
               uci -q set wireless.$radio.disabled='0'
           done
           uci -q commit wireless
@@ -187,7 +189,8 @@ jobs:
           set -eux
           cd openwrt
           test -d bin/targets/qualcommax/ipq60xx
-          make -s kernel_version
+          KERNEL_PATCHVER="$(sed -n 's/^KERNEL_PATCHVER:=//p' target/linux/qualcommax/Makefile | head -n1)"
+          test "$KERNEL_PATCHVER" = "6.18"
           ls -lah bin/targets/qualcommax/ipq60xx/
           ls bin/targets/qualcommax/ipq60xx/*jdcloud_re-ss-01*squashfs-sysupgrade.bin
           ls bin/targets/qualcommax/ipq60xx/*jdcloud_re-ss-01*initramfs-uImage.itb
